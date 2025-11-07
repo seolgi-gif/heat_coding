@@ -23,7 +23,7 @@ except Exception:
 
 # --- 2. 2D 열전달 시뮬레이션 함수 ---
 # (이전과 동일, 안정성 높음)
-def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20+273.15, sim_time_minutes=5):
+def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20+273.15, sim_time_minutes=15):
     sim_time_seconds = sim_time_minutes * 60
     L_y = 0.1
     alpha = k / (rho * cp)
@@ -55,7 +55,7 @@ def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20
             time_to_target = time_points[t_step] / 60
     return time_points, temp_history_celsius, T - 273.15, time_to_target
 
-# --- 3. 시나리오(재료) 정의 (알루미늄 추가) ---
+# --- 3. 시나리오(재료) 정의 ---
 scenarios = {
     '에어로겔 (최상급 단열재)': {'k': 0.02, 'rho': 80, 'cp': 1000},
     '세라믹 섬유 (고성능 단열재)': {'k': 0.1, 'rho': 150, 'cp': 1000},
@@ -63,27 +63,27 @@ scenarios = {
     '알루미늄 (열 전도체 비교용)': {'k': 200.0, 'rho': 2700, 'cp': 900},
 }
 
-# --- 4. Streamlit UI 구성 (5분 챌린지 버전) ---
+# --- 4. Streamlit UI 구성 (15분 고정 시간 버전) ---
 st.set_page_config(layout="wide")
-st.title("🔥 단열재 5분 버티기 챌린지")
-st.markdown("외부 1000°C 환경에서 선택한 재료가 **5분**간 내부 온도를 120°C 이하로 버텨낼 수 있을까요? **두께**와 **시간**을 조절하며 직접 확인해보세요!")
+st.title("🌡️ 2D 열전달 시뮬레이션")
+st.markdown("외부 1000°C 환경에서 **15분** 동안, 재료의 **두께**에 따라 내부 온도가 어떻게 변하는지 관찰합니다.")
 
-st.sidebar.header("⚙️ 챌린지 설정")
-selected_material_name = st.sidebar.selectbox("1. 챌린지 재료 선택", options=list(scenarios.keys()))
+st.sidebar.header("⚙️ 시뮬레이션 설정")
+selected_material_name = st.sidebar.selectbox("1. 재료 선택", options=list(scenarios.keys()))
 thickness_cm = st.sidebar.slider("2. 재료 두께 (cm)", min_value=1.0, max_value=20.0, value=5.0, step=0.5)
-sim_time_minutes = st.sidebar.slider("3. 관찰 시간 (분)", min_value=1, max_value=15, value=5, step=1)
 
 thickness_m = thickness_cm / 100.0
 material_props = scenarios[selected_material_name]
 k = material_props['k']; rho = material_props['rho']; cp = material_props['cp']
+SIMULATION_TIME_MINUTES = 15
 
-if st.sidebar.button("🚀 챌린지 시작!"):
-    with st.spinner(f"'{selected_material_name}'(두께: {thickness_cm}cm)으로 {sim_time_minutes}분간 버티기 테스트 중..."):
+if st.sidebar.button("🚀 시뮬레이션 실행"):
+    with st.spinner(f"'{selected_material_name}'(두께: {thickness_cm}cm)으로 {SIMULATION_TIME_MINUTES}분간 시뮬레이션 중..."):
         time_pts, temp_hist, final_temp_dist, time_to_target = run_2d_heat_simulation(
-            k=k, L_x=thickness_m, rho=rho, cp=cp, sim_time_minutes=sim_time_minutes
+            k=k, L_x=thickness_m, rho=rho, cp=cp, sim_time_minutes=SIMULATION_TIME_MINUTES
         )
 
-    st.subheader(f"📊 {sim_time_minutes}분 챌린지 결과")
+    st.subheader(f"📊 {SIMULATION_TIME_MINUTES}분 시뮬레이션 결과")
     
     with st.expander("🔬 선택 재료의 물리적 특성 보기"):
         st.markdown(f"- **열전도율 (k)**: `{k}` W/m·K (낮을수록 단열 성능 좋음)")
@@ -93,30 +93,27 @@ if st.sidebar.button("🚀 챌린지 시작!"):
     else:
         final_temp = temp_hist[-1]
         col1, col2, col3 = st.columns(3)
-        col1.metric(f"최종 온도 ({sim_time_minutes}분 후)", f"{final_temp:.1f} °C")
+        col1.metric(f"최종 온도 ({SIMULATION_TIME_MINUTES}분 후)", f"{final_temp:.1f} °C")
         
-        # 5분 버티기 목표에 대한 결과 표시
-        if time_to_target is None or time_to_target > 5:
-             col2.metric("5분 버티기 목표", "🏆 성공!")
+        if final_temp < 120:
+             col2.metric("목표(120°C) 달성", "✅ 성공")
         else:
-             col2.metric("5분 버티기 목표", "💥 실패!")
+             col2.metric("목표(120°C) 달성", "❌ 실패")
 
         if time_to_target is not None:
             col3.metric("120°C 도달 시간", f"{time_to_target:.1f} 분")
         else:
-            col3.metric("120°C 도달 시간", f"{sim_time_minutes}분 이상")
+            col3.metric("120°C 도달 시간", f"{SIMULATION_TIME_MINUTES}분 이상")
 
         # --- 5. 결과 시각화 ---
         fig1, ax1 = plt.subplots(figsize=(10, 5))
         ax1.plot(time_pts / 60, temp_hist, label=f"{selected_material_name} ({thickness_cm}cm)", lw=2.5)
         ax1.axhline(y=120, color='r', linestyle='--', label='목표 최대 온도 (120°C)')
-        if time_to_target is not None and time_to_target <= 5: # 5분 버티기 실패 시 강조
-            ax1.axvline(x=5, color='orange', linestyle=':', label='5분 목표 지점')
         
         ax1.set_title(f'내부 표면 온도 변화', fontproperties=font_prop, fontsize=16)
         ax1.set_xlabel('시간 (분)', fontproperties=font_prop)
         ax1.set_ylabel('평균 온도 (°C)', fontproperties=font_prop)
-        ax1.legend(prop=font_prop); ax1.grid(True, linestyle=':'); ax1.set_xlim(0, sim_time_minutes)
+        ax1.legend(prop=font_prop); ax1.grid(True, linestyle=':'); ax1.set_xlim(0, SIMULATION_TIME_MINUTES)
         max_temp_visual = max(temp_hist)
         ax1.set_ylim(15, max(150, max_temp_visual * 1.2))
         st.pyplot(fig1)
@@ -128,5 +125,4 @@ if st.sidebar.button("🚀 챌린지 시작!"):
         st.pyplot(fig2)
 
 else:
-    st.info("사이드바에서 재료, 두께, 시간을 설정한 후 '챌린지 시작!' 버튼을 눌러주세요.")
-
+    st.info("사이드바에서 재료와 두께를 설정한 후 '시뮬레이션 실행' 버튼을 눌러주세요.")
