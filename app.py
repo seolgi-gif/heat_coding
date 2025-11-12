@@ -3,23 +3,32 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-# --- 1. 한글 폰트 설정 ---
-# (이전과 동일)
-try:
-    font_path = fm.findSystemFonts(fontpaths=None, fontext='ttf')
-    nanum_gothic = next((f for f in font_path if 'NanumGothic' in f), None)
-    malgun_gothic = next((f for f in font_path if 'Malgun' in f), None)
-    if nanum_gothic:
-        font_prop = fm.FontProperties(fname=nanum_gothic)
+# --- 1. 한글 폰트 설정 (Streamlit Cloud에 최적화) ---
+# packages.txt를 통해 설치된 나눔 폰트를 사용하도록 설정
+@st.cache_data
+def font_setup():
+    # matplotlib 폰트 캐시를 다시 빌드
+    fm._rebuild()
+    
+    # 설치된 나눔고딕 폰트 경로 확인
+    font_files = fm.findSystemFonts(fontpaths=None, fontext='ttf')
+    nanum_gothic_files = [f for f in font_files if 'NanumGothic' in f]
+    
+    if nanum_gothic_files:
+        # 나눔고딕 폰트를 기본 폰트로 설정
         plt.rc('font', family='NanumGothic')
-    elif malgun_gothic:
-        font_prop = fm.FontProperties(fname=malgun_gothic)
-        plt.rc('font', family='Malgun Gothic')
+        font_prop = fm.FontProperties(fname=nanum_gothic_files[0]) # 첫 번째 찾은 폰트 사용
     else:
-        font_prop = fm.FontProperties(size=12)
+        # 폰트가 없는 경우 기본값 사용 (경고 메시지 표시)
+        st.warning("나눔고딕 폰트를 찾을 수 없습니다. packages.txt 파일이 올바르게 설정되었는지 확인하세요. 글자가 깨질 수 있습니다.")
+        font_prop = fm.FontProperties(size=12) # 폴백
+        
+    # 마이너스 부호 깨짐 방지
     plt.rcParams['axes.unicode_minus'] = False
-except Exception:
-    font_prop = fm.FontProperties(size=12)
+    return font_prop
+
+font_prop = font_setup()
+
 
 # --- 2. 2D 열전달 시뮬레이션 함수 ---
 # (이전과 동일, 안정성 높음)
@@ -66,14 +75,12 @@ def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20
     return time_points, temp_history_celsius, T - 273.15, time_to_target
 
 # --- 3. 시나리오(재료) 정의 ---
-# =================== 변경된 부분: 내화벽돌을 단열타일로 교체 ===================
 scenarios = {
     '에어로겔 (최상급 단열재)': {'k': 0.02, 'rho': 80, 'cp': 1000},
     '고강도 경량 단열 타일 (우주왕복선)': {'k': 0.06, 'rho': 145, 'cp': 1000},
     '세라믹 섬유 (고성능 단열재)': {'k': 0.1, 'rho': 150, 'cp': 1000},
     '알루미늄 (열 전도체 비교용)': {'k': 200.0, 'rho': 2700, 'cp': 900},
 }
-# =========================================================================
 
 # --- 4. Streamlit UI 구성 (15분 고정 시간 버전) ---
 st.set_page_config(layout="wide")
