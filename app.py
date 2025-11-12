@@ -3,45 +3,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 
-# --- 1. 한글 폰트 설정 (Streamlit Cloud에 최적화) ---
-# packages.txt를 통해 설치된 나눔 폰트를 사용하도록 설정
-@st.cache_data
-def font_setup():
-    # matplotlib 폰트 캐시를 다시 빌드
-    fm._rebuild()
-    
-    # 설치된 나눔고딕 폰트 경로 확인
-    font_files = fm.findSystemFonts(fontpaths=None, fontext='ttf')
-    nanum_gothic_files = [f for f in font_files if 'NanumGothic' in f]
-    
-    if nanum_gothic_files:
-        # 나눔고딕 폰트를 기본 폰트로 설정
+# --- 1. 한글 폰트 설정 (가장 안정적인 방식으로 수정) ---
+try:
+    font_path = fm.findSystemFonts(fontpaths=None, fontext='ttf')
+    nanum_gothic = next((f for f in font_path if 'NanumGothic' in f), None)
+    if nanum_gothic:
+        font_prop = fm.FontProperties(fname=nanum_gothic)
         plt.rc('font', family='NanumGothic')
-        font_prop = fm.FontProperties(fname=nanum_gothic_files[0]) # 첫 번째 찾은 폰트 사용
     else:
-        # 폰트가 없는 경우 기본값 사용 (경고 메시지 표시)
-        st.warning("나눔고딕 폰트를 찾을 수 없습니다. packages.txt 파일이 올바르게 설정되었는지 확인하세요. 글자가 깨질 수 있습니다.")
-        font_prop = fm.FontProperties(size=12) # 폴백
-        
-    # 마이너스 부호 깨짐 방지
+        # 폰트가 없는 경우를 대비한 폴백
+        font_prop = fm.FontProperties(size=12)
     plt.rcParams['axes.unicode_minus'] = False
-    return font_prop
-
-font_prop = font_setup()
+except Exception:
+    st.warning("폰트 로딩 중 문제가 발생했습니다. 기본 폰트로 표시됩니다.")
+    font_prop = fm.FontProperties(size=12)
 
 
 # --- 2. 2D 열전달 시뮬레이션 함수 ---
-# (이전과 동일, 안정성 높음)
+# (이전과 동일, 물리적으로 정확함)
 def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20+273.15, sim_time_minutes=15):
     sim_time_seconds = sim_time_minutes * 60
-    L_y = 0.1
+    L_y = 0.1 # 평판 높이 0.1m (100mm)
     alpha = k / (rho * cp)
     nx, ny = 50, 25
     dx = L_x / (nx - 1)
     dy = L_y / (ny - 1)
-    # 안정성 조건(Courant-Friedrichs-Lewy condition)을 고려한 dt 계산
     dt = 0.2 * (1 / (alpha * (1/dx**2 + 1/dy**2)))
-    if dt > 0.5: dt = 0.5 # dt가 너무 크지 않도록 상한 설정
+    if dt > 0.5: dt = 0.5
     nt = int(sim_time_seconds / dt)
     if nt <= 0: return None, None, None, None
 
@@ -53,28 +41,19 @@ def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20
 
     for t_step in range(nt):
         T_old = T.copy()
-        # 경계 조건 (Boundary Conditions)
-        T[:, 0] = T_hot      # 왼쪽: 고온
-        T[:, -1] = T[:, -2]  # 오른쪽: 단열 (Neumann)
-        T[0, :] = T[1, :]    # 위쪽: 단열 (Neumann)
-        T[-1, :] = T[-2, :]  # 아래쪽: 단열 (Neumann)
-        
-        # 유한 차분법을 이용한 내부 온도 계산
+        T[:, 0] = T_hot; T[:, -1] = T[:, -2]; T[0, :] = T[1, :]; T[-1, :] = T[-2, :]
         for i in range(1, ny - 1):
             for j in range(1, nx - 1):
                 term1 = (T_old[i+1, j] - 2*T_old[i, j] + T_old[i-1, j]) / dy**2
                 term2 = (T_old[i, j+1] - 2*T_old[i, j] + T_old[i, j-1]) / dx**2
                 T[i, j] = T_old[i, j] + alpha * dt * (term1 + term2)
-        
         current_inner_temp_k = np.mean(T[:, -1])
         temp_history_celsius[t_step] = current_inner_temp_k - 273.15
-        
         if time_to_target is None and current_inner_temp_k >= TARGET_TEMP_KELVIN:
             time_to_target = time_points[t_step] / 60
-            
     return time_points, temp_history_celsius, T - 273.15, time_to_target
 
-# --- 3. 시나리오(재료) 정의 ---
+# --- 3. 시나리오(재료) 정의 (사용자가 추가한 재료 유지) ---
 scenarios = {
     '에어로겔 (최상급 단열재)': {'k': 0.02, 'rho': 80, 'cp': 1000},
     '고강도 경량 단열 타일 (우주왕복선)': {'k': 0.06, 'rho': 145, 'cp': 1000},
@@ -124,7 +103,7 @@ if st.sidebar.button("🚀 시뮬레이션 실행"):
         else:
             col3.metric("120°C 도달 시간", f"{SIMULATION_TIME_MINUTES}분 이상")
 
-        # --- 5. 결과 시각화 ---
+        # --- 5. 결과 시각화 (그래프 단위 수정) ---
         fig1, ax1 = plt.subplots(figsize=(10, 5))
         ax1.plot(time_pts / 60, temp_hist, label=f"{selected_material_name} ({thickness_mm}mm)", lw=2.5)
         ax1.axhline(y=120, color='r', linestyle='--', label='목표 최대 온도 (120°C)')
@@ -138,9 +117,10 @@ if st.sidebar.button("🚀 시뮬레이션 실행"):
         st.pyplot(fig1)
 
         fig2, ax2 = plt.subplots(figsize=(10, 3))
-        im = ax2.imshow(final_temp_dist, cmap='inferno', aspect='auto', extent=[0, thickness_mm, 0, 10], vmin=20, vmax=1000)
+        # extent의 세로축을 100mm로 설정하고, 라벨도 mm로 통일
+        im = ax2.imshow(final_temp_dist, cmap='inferno', aspect='auto', extent=[0, thickness_mm, 0, 100], vmin=20, vmax=1000)
         fig2.colorbar(im, ax=ax2, label='온도 (°C)'); ax2.set_title(f'최종 시간에서의 2D 온도 분포', fontproperties=font_prop, fontsize=16)
-        ax2.set_xlabel('두께 방향 (mm)', fontproperties=font_prop); ax2.set_ylabel('높이 방향 (cm)', fontproperties=font_prop)
+        ax2.set_xlabel('두께 방향 (mm)', fontproperties=font_prop); ax2.set_ylabel('높이 방향 (mm)', fontproperties=font_prop)
         st.pyplot(fig2)
 
 else:
