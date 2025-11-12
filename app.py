@@ -30,8 +30,9 @@ def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20
     nx, ny = 50, 25
     dx = L_x / (nx - 1)
     dy = L_y / (ny - 1)
+    # 안정성 조건(Courant-Friedrichs-Lewy condition)을 고려한 dt 계산
     dt = 0.2 * (1 / (alpha * (1/dx**2 + 1/dy**2)))
-    if dt > 0.5: dt = 0.5
+    if dt > 0.5: dt = 0.5 # dt가 너무 크지 않도록 상한 설정
     nt = int(sim_time_seconds / dt)
     if nt <= 0: return None, None, None, None
 
@@ -43,25 +44,36 @@ def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20
 
     for t_step in range(nt):
         T_old = T.copy()
-        T[:, 0] = T_hot; T[:, -1] = T[:, -2]; T[0, :] = T[1, :]; T[-1, :] = T[-2, :]
+        # 경계 조건 (Boundary Conditions)
+        T[:, 0] = T_hot      # 왼쪽: 고온
+        T[:, -1] = T[:, -2]  # 오른쪽: 단열 (Neumann)
+        T[0, :] = T[1, :]    # 위쪽: 단열 (Neumann)
+        T[-1, :] = T[-2, :]  # 아래쪽: 단열 (Neumann)
+        
+        # 유한 차분법을 이용한 내부 온도 계산
         for i in range(1, ny - 1):
             for j in range(1, nx - 1):
                 term1 = (T_old[i+1, j] - 2*T_old[i, j] + T_old[i-1, j]) / dy**2
                 term2 = (T_old[i, j+1] - 2*T_old[i, j] + T_old[i, j-1]) / dx**2
                 T[i, j] = T_old[i, j] + alpha * dt * (term1 + term2)
+        
         current_inner_temp_k = np.mean(T[:, -1])
         temp_history_celsius[t_step] = current_inner_temp_k - 273.15
+        
         if time_to_target is None and current_inner_temp_k >= TARGET_TEMP_KELVIN:
             time_to_target = time_points[t_step] / 60
+            
     return time_points, temp_history_celsius, T - 273.15, time_to_target
 
 # --- 3. 시나리오(재료) 정의 ---
+# =================== 변경된 부분: 내화벽돌을 단열타일로 교체 ===================
 scenarios = {
     '에어로겔 (최상급 단열재)': {'k': 0.02, 'rho': 80, 'cp': 1000},
+    '고강도 경량 단열 타일 (우주왕복선)': {'k': 0.06, 'rho': 145, 'cp': 1000},
     '세라믹 섬유 (고성능 단열재)': {'k': 0.1, 'rho': 150, 'cp': 1000},
-    '내화 벽돌 (일반 단열재)': {'k': 1.0, 'rho': 2000, 'cp': 1000},
     '알루미늄 (열 전도체 비교용)': {'k': 200.0, 'rho': 2700, 'cp': 900},
 }
+# =========================================================================
 
 # --- 4. Streamlit UI 구성 (15분 고정 시간 버전) ---
 st.set_page_config(layout="wide")
@@ -70,15 +82,15 @@ st.markdown("외부 1000°C 환경에서 **15분** 동안, 재료의 **두께**�
 
 st.sidebar.header("⚙️ 시뮬레이션 설정")
 selected_material_name = st.sidebar.selectbox("1. 재료 선택", options=list(scenarios.keys()))
-thickness_cm = st.sidebar.slider("2. 재료 두께 (cm)", min_value=1.0, max_value=20.0, value=5.0, step=0.5)
+thickness_mm = st.sidebar.slider("2. 재료 두께 (mm)", min_value=10.0, max_value=200.0, value=50.0, step=1.0)
 
-thickness_m = thickness_cm / 100.0
+thickness_m = thickness_mm / 1000.0
 material_props = scenarios[selected_material_name]
 k = material_props['k']; rho = material_props['rho']; cp = material_props['cp']
 SIMULATION_TIME_MINUTES = 15
 
 if st.sidebar.button("🚀 시뮬레이션 실행"):
-    with st.spinner(f"'{selected_material_name}'(두께: {thickness_cm}cm)으로 {SIMULATION_TIME_MINUTES}분간 시뮬레이션 중..."):
+    with st.spinner(f"'{selected_material_name}'(두께: {thickness_mm}mm)으로 {SIMULATION_TIME_MINUTES}분간 시뮬레이션 중..."):
         time_pts, temp_hist, final_temp_dist, time_to_target = run_2d_heat_simulation(
             k=k, L_x=thickness_m, rho=rho, cp=cp, sim_time_minutes=SIMULATION_TIME_MINUTES
         )
@@ -107,7 +119,7 @@ if st.sidebar.button("🚀 시뮬레이션 실행"):
 
         # --- 5. 결과 시각화 ---
         fig1, ax1 = plt.subplots(figsize=(10, 5))
-        ax1.plot(time_pts / 60, temp_hist, label=f"{selected_material_name} ({thickness_cm}cm)", lw=2.5)
+        ax1.plot(time_pts / 60, temp_hist, label=f"{selected_material_name} ({thickness_mm}mm)", lw=2.5)
         ax1.axhline(y=120, color='r', linestyle='--', label='목표 최대 온도 (120°C)')
         
         ax1.set_title(f'내부 표면 온도 변화', fontproperties=font_prop, fontsize=16)
@@ -119,9 +131,9 @@ if st.sidebar.button("🚀 시뮬레이션 실행"):
         st.pyplot(fig1)
 
         fig2, ax2 = plt.subplots(figsize=(10, 3))
-        im = ax2.imshow(final_temp_dist, cmap='inferno', aspect='auto', extent=[0, thickness_cm, 0, 10], vmin=20, vmax=1000)
+        im = ax2.imshow(final_temp_dist, cmap='inferno', aspect='auto', extent=[0, thickness_mm, 0, 10], vmin=20, vmax=1000)
         fig2.colorbar(im, ax=ax2, label='온도 (°C)'); ax2.set_title(f'최종 시간에서의 2D 온도 분포', fontproperties=font_prop, fontsize=16)
-        ax2.set_xlabel('두께 방향 (cm)', fontproperties=font_prop); ax2.set_ylabel('높이 방향 (cm)', fontproperties=font_prop)
+        ax2.set_xlabel('두께 방향 (mm)', fontproperties=font_prop); ax2.set_ylabel('높이 방향 (cm)', fontproperties=font_prop)
         st.pyplot(fig2)
 
 else:
