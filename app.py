@@ -53,12 +53,14 @@ def run_2d_heat_simulation(k, L_x, rho, cp=1000, T_hot=1000+273.15, T_initial=20
             time_to_target = time_points[t_step] / 60
     return time_points, temp_history_celsius, T - 273.15, time_to_target
 
-# --- 3. 시나리오(재료) 정의 (사용자가 추가한 재료 유지) ---
+# --- 3. 시나리오(재료) 정의 (사용자 요청에 따라 재료 목록 수정) ---
+# ※ 참고: PCM은 상변화(잠열) 효과가 반영되지 않은 고체 상태의 물성치입니다.
 scenarios = {
     '에어로겔 (최상급 단열재)': {'k': 0.02, 'rho': 80, 'cp': 1000},
-    '고강도 경량 단열 타일 (우주왕복선)': {'k': 0.06, 'rho': 145, 'cp': 1000},
     '세라믹 섬유 (고성능 단열재)': {'k': 0.1, 'rho': 150, 'cp': 1000},
-    '알루미늄 (열 전도체 비교용)': {'k': 200.0, 'rho': 2700, 'cp': 900},
+    'PCM (상변화 물질 - 고체 상태)': {'k': 0.25, 'rho': 900, 'cp': 2100},
+    '강철 (Steel)': {'k': 50.0, 'rho': 7850, 'cp': 490},
+    '알루미늄 (Aluminum)': {'k': 200.0, 'rho': 2700, 'cp': 900},
 }
 
 # --- 4. Streamlit UI 구성 (15분 고정 시간 버전) ---
@@ -85,6 +87,8 @@ if st.sidebar.button("🚀 시뮬레이션 실행"):
     
     with st.expander("🔬 선택 재료의 물리적 특성 보기"):
         st.markdown(f"- **열전도율 (k)**: `{k}` W/m·K (낮을수록 단열 성능 좋음)")
+        st.markdown(f"- **밀도 (rho)**: `{rho}` kg/m³")
+        st.markdown(f"- **비열 (cp)**: `{cp}` J/kg·K")
 
     if time_pts is None:
         st.error("시뮬레이션 조건이 너무 극단적이라 계산이 불가능합니다.")
@@ -125,3 +129,4 @@ if st.sidebar.button("🚀 시뮬레이션 실행"):
 
 else:
     st.info("사이드바에서 재료와 두께를 설정한 후 '시뮬레이션 실행' 버튼을 눌러주세요.")
+
